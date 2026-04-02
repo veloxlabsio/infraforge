@@ -1,0 +1,12 @@
+apiVersion: platform.veloxlabs.dev/v1alpha1
+kind: Microservice
+metadata:
+  name: demo-api
+  namespace: apps
+spec:
+  image: nginx:alpine
+  replicas: 3
+  port: 80
+  resources:
+    cpu: "50m"
+    memory: "64Mi"
