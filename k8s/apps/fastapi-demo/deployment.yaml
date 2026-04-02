@@ -22,7 +22,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: fastapi-demo
-          image: ghcr.io/veloxlabsio/infraforge/fastapi-demo:cf03313
+          image: ghcr.io/veloxlabsio/infraforge/fastapi-demo:84c71ad
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
