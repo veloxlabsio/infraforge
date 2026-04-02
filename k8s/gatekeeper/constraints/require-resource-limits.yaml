@@ -3,7 +3,7 @@ kind: K8sRequiredResources
 metadata:
   name: pods-must-have-resource-limits
 spec:
-  enforcementAction: warn
+  enforcementAction: deny
   match:
     kinds:
       - apiGroups: [""]

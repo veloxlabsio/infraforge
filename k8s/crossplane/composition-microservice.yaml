@@ -92,6 +92,12 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.resources.memory
                 toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].resources.requests.memory
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.resources.cpu
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].resources.limits.cpu
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.resources.memory
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].resources.limits.memory
 
           - name: service
             base:

@@ -146,13 +146,13 @@ spec:
   storageSize: "5Gi"
 ```
 
-Gets you a PostgreSQL StatefulSet with PVC, credentials secret, and a ClusterIP service.
+Gets you a PostgreSQL StatefulSet with PVC and a ClusterIP service. You must create a credentials secret (`<name>-creds`) before applying the claim — see `k8s/apps/demo-db/secret.yaml` for instructions.
 
 ## Security
 
 InfraForge layers security controls at build time and runtime:
 
-- **GitHub Actions** — Lint and Trivy scan run as gates before image push; image scan runs before manifest update
+- **GitHub Actions** — Source lint and Trivy scan gate the build; built-image CVE scan gates the deployment manifest update
 - **OPA Gatekeeper** — 7 policies: blocks privileged containers, host namespaces, hostPath volumes; enforces non-root, resource limits, required labels, capability drop
 - **Trivy Operator** — Continuously scans all running container images for CVEs
 - **Pod Security** — All workloads use `runAsNonRoot`, `seccompProfile: RuntimeDefault`, and `capabilities.drop: ["ALL"]`

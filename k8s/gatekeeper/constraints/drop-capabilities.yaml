@@ -3,7 +3,7 @@ kind: K8sDropCapabilities
 metadata:
   name: containers-must-drop-all-capabilities
 spec:
-  enforcementAction: warn
+  enforcementAction: deny
   match:
     kinds:
       - apiGroups: [""]

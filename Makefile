@@ -19,11 +19,12 @@ doctor: ## Check all prerequisites are installed
 local-cluster: ## Create local k3d cluster
 	@./scripts/cluster-create.sh
 
-build-demo: ## Build the demo FastAPI image locally
-	@docker build -t fastapi-demo:v1.0.0 apps/fastapi-demo/
-
-load-demo: build-demo ## Build and load demo image into k3d cluster
-	@k3d image import fastapi-demo:v1.0.0 -c infraforge
+load-demo: ## Build demo image and load into local k3d cluster
+	@docker build -t fastapi-demo:local apps/fastapi-demo/
+	@k3d image import fastapi-demo:local -c infraforge
+	@sed -i 's|image: .*fastapi-demo.*|image: fastapi-demo:local|' k8s/apps/fastapi-demo/deployment.yaml
+	@echo "Image loaded. Deployment manifest updated to fastapi-demo:local"
+	@echo "NOTE: Do not commit this change — CI manages the image tag in production."
 
 bootstrap: ## Install all platform components on current cluster
 	@chmod +x ./scripts/bootstrap.sh && ./scripts/bootstrap.sh all
@@ -80,8 +81,10 @@ port-forward: ## Start port-forwarding for ArgoCD and Grafana
 	@echo "  ArgoCD:  kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
 	@echo "  Grafana: kubectl -n monitoring get secret monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 -d"
 
-stop-port-forward: ## Stop all port-forward processes
-	@pkill -f "kubectl port-forward" 2>/dev/null || echo "No port-forwards running"
+stop-port-forward: ## Stop InfraForge port-forward processes
+	@pkill -f "kubectl port-forward svc/argocd-server" 2>/dev/null || true
+	@pkill -f "kubectl port-forward svc/monitoring-grafana" 2>/dev/null || true
+	@echo "InfraForge port-forwards stopped"
 
 # ─── Cloud Deployment ────────────────────────────────────────────
 

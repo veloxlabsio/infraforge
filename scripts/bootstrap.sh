@@ -59,9 +59,10 @@ wait_for_crd() {
 
 # Apply base resources
 setup_base() {
-    log "Creating namespaces..."
+    log "Creating namespaces and network policies..."
     kubectl apply -f "$ROOT_DIR/k8s/base/namespaces.yaml"
-    ok "Namespaces created"
+    kubectl apply -f "$ROOT_DIR/k8s/base/network-policies.yaml"
+    ok "Namespaces and network policies created"
 }
 
 # Install ArgoCD
@@ -110,7 +111,7 @@ setup_crossplane() {
     wait_for_crd "providerconfigs.kubernetes.crossplane.io" 120
     kubectl apply -f "$ROOT_DIR/k8s/crossplane/provider-config.yaml"
 
-    log "Applying scoped RBAC for provider..."
+    log "Applying namespace-scoped RBAC for provider..."
     kubectl apply -f "$ROOT_DIR/k8s/crossplane/rbac.yaml"
     SA=""
     local elapsed=0
@@ -122,10 +123,19 @@ setup_crossplane() {
         sleep 5
         elapsed=$((elapsed + 5))
     done
-    kubectl create clusterrolebinding infraforge-provider-kubernetes \
-        --clusterrole=crossplane-provider-kubernetes \
+    # ClusterRoleBinding for read-only namespace discovery
+    kubectl create clusterrolebinding infraforge-provider-ns-reader \
+        --clusterrole=infraforge-provider-ns-reader \
         --serviceaccount="crossplane-system:$SA" \
         --dry-run=client -o yaml | kubectl apply -f -
+    # RoleBindings per namespace (provider can only touch apps and ml-serving)
+    for ns in apps ml-serving; do
+        kubectl create rolebinding "infraforge-provider" \
+            --role=infraforge-provider \
+            --serviceaccount="crossplane-system:$SA" \
+            --namespace="$ns" \
+            --dry-run=client -o yaml | kubectl apply -f -
+    done
 
     log "Applying XRDs and Compositions..."
     kubectl apply -f "$ROOT_DIR/k8s/crossplane/xrd-microservice.yaml"

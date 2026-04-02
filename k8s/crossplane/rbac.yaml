@@ -1,11 +1,26 @@
+# Namespace-scoped roles for Crossplane Kubernetes provider.
+# The provider can only manage resources in apps and ml-serving namespaces.
+# A minimal ClusterRole is kept for read-only namespace discovery.
+
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: crossplane-provider-kubernetes
+  name: infraforge-provider-ns-reader
   labels:
     managed-by: infraforge
 rules:
-  # Manage workloads in apps and ml-serving namespaces only
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: infraforge-provider
+  namespace: apps
+  labels:
+    managed-by: infraforge
+rules:
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -18,7 +33,24 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["get", "list", "watch", "create"]
-  # Read-only for namespaces (needed for namespace-scoped resources)
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: infraforge-provider
+  namespace: ml-serving
+  labels:
+    managed-by: infraforge
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
-    resources: ["namespaces"]
+    resources: ["services", "secrets", "persistentvolumeclaims", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch", "create"]

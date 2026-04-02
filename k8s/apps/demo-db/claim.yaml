@@ -6,4 +6,3 @@ metadata:
 spec:
   engine: postgres
   storageSize: "1Gi"
-  version: "16"
