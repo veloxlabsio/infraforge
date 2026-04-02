@@ -1,0 +1,9 @@
+apiVersion: platform.veloxlabs.dev/v1alpha1
+kind: Database
+metadata:
+  name: demo-db
+  namespace: apps
+spec:
+  engine: postgres
+  storageSize: "1Gi"
+  version: "16"

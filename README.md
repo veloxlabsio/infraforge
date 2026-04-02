@@ -32,11 +32,11 @@ Developer/ML Engineer
 |---|---|---|
 | Orchestration | K3s / K8s | Done |
 | GitOps | ArgoCD | Done |
-| Monitoring | Prometheus + Grafana | In Progress |
+| Monitoring | Prometheus + Grafana | Done |
+| Infrastructure | Crossplane | Done |
+| Security | OPA Gatekeeper + Trivy | In Progress |
 | ML Serving | KServe + MLflow | Planned |
 | Developer Portal | Backstage | Planned |
-| Infrastructure | Crossplane + Terraform | Planned |
-| Security | OPA Gatekeeper + Falco + Trivy | Planned |
 | Compliance | Audit Logging + PII Detection | Planned |
 
 ## Quick Start
@@ -65,6 +65,27 @@ kubectl port-forward svc/argocd-server -n argocd 8888:443
 # Open https://localhost:8888
 ```
 
+## Self-Service: Deploy a Microservice
+
+Developers deploy apps with a simple claim — no Kubernetes knowledge needed:
+
+```yaml
+apiVersion: platform.veloxlabs.dev/v1alpha1
+kind: Microservice
+metadata:
+  name: my-api
+  namespace: apps
+spec:
+  image: my-image:v1
+  replicas: 3
+  port: 8000
+  resources:
+    cpu: "100m"
+    memory: "128Mi"
+```
+
+Crossplane handles the rest — creates Deployment, Service, health checks, resource limits.
+
 ## Project Structure
 
 ```
@@ -72,9 +93,14 @@ infraforge/
 ├── k8s/
 │   ├── argocd/          # ArgoCD application manifests
 │   ├── monitoring/      # Prometheus + Grafana configs
+│   ├── crossplane/      # XRDs, Compositions, Provider configs
 │   ├── apps/            # Application deployments
-│   │   └── sample-app/  # Example app deployed via GitOps
+│   │   ├── sample-app/  # Nginx app deployed via GitOps
+│   │   ├── fastapi-demo/# FastAPI app deployed via ArgoCD
+│   │   └── demo-api/    # Microservice deployed via Crossplane claim
 │   └── base/            # Shared K8s resources (namespaces, RBAC)
+├── apps/                # Application source code
+│   └── fastapi-demo/    # FastAPI app with Dockerfile
 ├── scripts/             # Setup and utility scripts
 └── docs/                # Architecture docs
 ```

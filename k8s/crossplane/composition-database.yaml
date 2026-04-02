@@ -1,0 +1,168 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: database-composition
+  labels:
+    platform: veloxlabs
+spec:
+  compositeTypeRef:
+    apiVersion: platform.veloxlabs.dev/v1alpha1
+    kind: XDatabase
+  mode: Pipeline
+  pipeline:
+    - step: create-database
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: pvc
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: kubernetes-provider
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: PersistentVolumeClaim
+                    metadata:
+                      namespace: apps
+                    spec:
+                      accessModes:
+                        - ReadWriteOnce
+                      resources:
+                        requests:
+                          storage: "1Gi"
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.manifest.metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-data"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.storageSize
+                toFieldPath: spec.forProvider.manifest.spec.resources.requests.storage
+
+          - name: deployment
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: kubernetes-provider
+                forProvider:
+                  manifest:
+                    apiVersion: apps/v1
+                    kind: StatefulSet
+                    metadata:
+                      namespace: apps
+                    spec:
+                      replicas: 1
+                      selector:
+                        matchLabels:
+                          app: ""
+                          component: database
+                      template:
+                        metadata:
+                          labels:
+                            app: ""
+                            component: database
+                        spec:
+                          containers:
+                            - name: db
+                              image: postgres:16-alpine
+                              ports:
+                                - containerPort: 5432
+                              env:
+                                - name: POSTGRES_DB
+                                  value: app
+                                - name: POSTGRES_USER
+                                  value: app
+                                - name: POSTGRES_PASSWORD
+                                  valueFrom:
+                                    secretKeyRef:
+                                      name: ""
+                                      key: password
+                              volumeMounts:
+                                - name: data
+                                  mountPath: /var/lib/postgresql/data
+                              resources:
+                                requests:
+                                  cpu: "100m"
+                                  memory: "256Mi"
+                                limits:
+                                  cpu: "500m"
+                                  memory: "512Mi"
+                              readinessProbe:
+                                exec:
+                                  command:
+                                    - pg_isready
+                                    - -U
+                                    - app
+                                initialDelaySeconds: 5
+                                periodSeconds: 10
+                          volumes:
+                            - name: data
+                              persistentVolumeClaim:
+                                claimName: ""
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.manifest.metadata.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.manifest.spec.selector.matchLabels.app
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.manifest.spec.template.metadata.labels.app
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].env[2].valueFrom.secretKeyRef.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-creds"
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.volumes[0].persistentVolumeClaim.claimName
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-data"
+
+          - name: service
+            base:
+              apiVersion: kubernetes.crossplane.io/v1alpha2
+              kind: Object
+              spec:
+                providerConfigRef:
+                  name: kubernetes-provider
+                forProvider:
+                  manifest:
+                    apiVersion: v1
+                    kind: Service
+                    metadata:
+                      namespace: apps
+                    spec:
+                      type: ClusterIP
+                      ports:
+                        - port: 5432
+                          targetPort: 5432
+                      selector:
+                        app: ""
+                        component: database
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.manifest.metadata.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.manifest.spec.selector.app
