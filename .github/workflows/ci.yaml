@@ -6,8 +6,10 @@ on:
     paths:
       - "apps/**"
       - "k8s/**"
+      - ".github/workflows/**"
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
