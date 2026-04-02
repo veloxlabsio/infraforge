@@ -111,6 +111,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image
+        env:
+          GIT_SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          APP_NAME: ${{ matrix.app }}
+        run: |
+          SHORT_SHA=$(echo "${GIT_SHA}" | cut -c1-7)
+          docker pull "ghcr.io/${REPO}/${APP_NAME}:${SHORT_SHA}"
+
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
