@@ -1,9 +1,11 @@
 *.tfstate
 *.tfstate.backup
 .terraform/
+.terraform.lock.hcl
 *.tfvars
 !*.tfvars.example
 .env
 *.pem
 *.key
 kubeconfig
+node_modules/
