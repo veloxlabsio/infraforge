@@ -1,10 +1,12 @@
 # InfraForge
 
-An open-source Internal Developer Platform built on Kubernetes. One command to set up GitOps, monitoring, security policies, vulnerability scanning, and self-service infrastructure.
+A Kubernetes platform starter kit with GitOps, monitoring, security policies, vulnerability scanning, and self-service infrastructure — pre-wired and working in one command.
+
+> **Note:** InfraForge is a learning and reference platform, not a production-hardened product. Use it to bootstrap a development environment or as a starting point for your own IDP.
 
 ## Why InfraForge?
 
-Setting up a production-grade Kubernetes platform takes weeks — wiring ArgoCD with Crossplane, configuring Gatekeeper policies, connecting Trivy scanning, adding Prometheus dashboards. InfraForge gives you all of it, pre-integrated and working, in one `make bootstrap`.
+Wiring ArgoCD with Crossplane, configuring Gatekeeper policies, connecting Trivy scanning, and adding Prometheus takes time. InfraForge gives you a working baseline with all of these integrated, so you can learn, experiment, and build on top of it.
 
 ## Architecture
 
@@ -148,11 +150,13 @@ Gets you a PostgreSQL StatefulSet with PVC, credentials secret, and a ClusterIP 
 
 ## Security
 
-InfraForge enforces security at multiple layers:
+InfraForge layers security controls at build time and runtime:
 
-- **OPA Gatekeeper** — Blocks privileged containers, enforces resource limits, requires labels
-- **Trivy Operator** — Continuously scans all container images for vulnerabilities
-- **GitHub Actions** — Runs Trivy scan in CI before images reach the cluster
+- **GitHub Actions** — Lint and Trivy scan run as gates before image push; image scan runs before manifest update
+- **OPA Gatekeeper** — 7 policies: blocks privileged containers, host namespaces, hostPath volumes; enforces non-root, resource limits, required labels, capability drop
+- **Trivy Operator** — Continuously scans all running container images for CVEs
+- **Pod Security** — All workloads use `runAsNonRoot`, `seccompProfile: RuntimeDefault`, and `capabilities.drop: ["ALL"]`
+- **NetworkPolicies** — Default-deny ingress in apps namespace, allow only same-namespace and monitoring scrape
 
 Example: trying to deploy a privileged container gets denied:
 
@@ -173,28 +177,44 @@ infraforge/
 │   ├── crossplane/      # XRDs, Compositions, Providers
 │   ├── gatekeeper/      # OPA policy templates + constraints
 │   ├── apps/            # Application K8s manifests
-│   └── base/            # Namespaces, RBAC
+│   └── base/            # Namespaces, NetworkPolicies
 ├── terraform/           # DigitalOcean infrastructure
 ├── scripts/
-│   ├── bootstrap.sh     # One-command platform setup
-│   ├── teardown.sh      # Clean removal
+│   ├── bootstrap.sh     # One-command platform setup (pinned versions)
+│   ├── teardown.sh      # Scoped removal of infraforge resources
 │   └── cluster-create.sh
+├── LICENSE
+├── CONTRIBUTING.md
+├── SECURITY.md
 └── Makefile             # All operations
 ```
 
 ## Make Targets
 
 ```
+make doctor            # Check prerequisites
 make local-cluster     # Create local k3d cluster
+make build-demo        # Build demo FastAPI image
+make load-demo         # Build + load image into k3d
 make bootstrap         # Install all platform components
 make bootstrap-argocd  # Install only ArgoCD
 make status            # Show platform status
+make verify            # Verify all components are healthy
 make port-forward      # Access ArgoCD + Grafana UIs
-make teardown          # Remove everything
+make teardown          # Remove infraforge resources
 make terraform-plan    # Plan cloud infrastructure
 make terraform-apply   # Provision cloud cluster
 ```
 
+## Known Limitations
+
+- Crossplane provisions in-cluster resources only (no managed cloud databases yet)
+- Single-replica PostgreSQL — not suitable for production data
+- No secret management integration (Vault, External Secrets) yet
+- No ingress controller or TLS termination
+- No log aggregation (Loki/ELK)
+- Backstage developer portal planned but not yet included
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE)

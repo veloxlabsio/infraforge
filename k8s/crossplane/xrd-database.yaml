@@ -23,15 +23,11 @@ spec:
               properties:
                 engine:
                   type: string
-                  enum: ["postgres", "redis"]
-                  description: Database engine
+                  enum: ["postgres"]
+                  description: Database engine (postgres supported)
                 storageSize:
                   type: string
                   default: "1Gi"
                   description: Storage size
-                version:
-                  type: string
-                  default: "16"
-                  description: Engine version
               required:
                 - engine

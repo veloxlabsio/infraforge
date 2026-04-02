@@ -91,6 +91,7 @@ spec:
                     metadata:
                       namespace: apps
                     spec:
+                      serviceName: ""
                       replicas: 1
                       selector:
                         matchLabels:
@@ -102,9 +103,17 @@ spec:
                             app: ""
                             component: database
                         spec:
+                          securityContext:
+                            fsGroup: 999
                           containers:
                             - name: db
                               image: postgres:16-alpine
+                              securityContext:
+                                runAsUser: 999
+                                runAsGroup: 999
+                                runAsNonRoot: true
+                                allowPrivilegeEscalation: false
+                                readOnlyRootFilesystem: false
                               ports:
                                 - containerPort: 5432
                               env:
@@ -143,6 +152,9 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: metadata.name
                 toFieldPath: spec.forProvider.manifest.metadata.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.manifest.spec.serviceName
               - type: FromCompositeFieldPath
                 fromFieldPath: metadata.name
                 toFieldPath: spec.forProvider.manifest.spec.selector.matchLabels.app

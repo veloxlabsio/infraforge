@@ -18,6 +18,13 @@ err()  { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Pinned versions — update these intentionally, not accidentally
+ARGOCD_VERSION="v2.13.3"
+PROMETHEUS_CHART_VERSION="67.11.0"
+CROSSPLANE_CHART_VERSION="1.18.2"
+GATEKEEPER_CHART_VERSION="3.18.2"
+TRIVY_CHART_VERSION="0.25.0"
+
 # Check prerequisites
 check_deps() {
     log "Checking prerequisites..."
@@ -32,6 +39,24 @@ check_deps() {
     ok "All prerequisites met"
 }
 
+wait_for_deployment() {
+    local name="$1" namespace="$2" timeout="${3:-300}"
+    log "Waiting for $name in $namespace..."
+    kubectl wait --for=condition=available "deployment/$name" -n "$namespace" --timeout="${timeout}s"
+}
+
+wait_for_crd() {
+    local crd="$1" timeout="${2:-120}"
+    local elapsed=0
+    while ! kubectl get crd "$crd" &>/dev/null; do
+        if [ "$elapsed" -ge "$timeout" ]; then
+            err "Timed out waiting for CRD: $crd"
+        fi
+        sleep 5
+        elapsed=$((elapsed + 5))
+    done
+}
+
 # Apply base resources
 setup_base() {
     log "Creating namespaces..."
@@ -41,58 +66,72 @@ setup_base() {
 
 # Install ArgoCD
 setup_argocd() {
-    log "Installing ArgoCD..."
+    log "Installing ArgoCD ${ARGOCD_VERSION}..."
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --server-side --force-conflicts
-    log "Waiting for ArgoCD to be ready..."
-    kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=300s
+    kubectl apply -n argocd \
+        -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml" \
+        --server-side --force-conflicts
+    wait_for_deployment argocd-server argocd 300
     ok "ArgoCD installed"
+    log "Retrieve credentials: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
 }
 
 # Install monitoring stack
 setup_monitoring() {
-    log "Installing Prometheus + Grafana..."
+    log "Installing Prometheus + Grafana (chart ${PROMETHEUS_CHART_VERSION})..."
     helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
     helm repo update prometheus-community
     helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+        --version "$PROMETHEUS_CHART_VERSION" \
         --namespace monitoring --create-namespace \
-        --set grafana.adminPassword=infraforge \
         --set grafana.service.type=ClusterIP \
         --set prometheus.prometheusSpec.retention=7d \
         --wait --timeout 300s
     ok "Monitoring stack installed"
+    log "Retrieve Grafana password: kubectl -n monitoring get secret monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 -d"
 }
 
 # Install Crossplane
 setup_crossplane() {
-    log "Installing Crossplane..."
+    log "Installing Crossplane (chart ${CROSSPLANE_CHART_VERSION})..."
     helm repo add crossplane-stable https://charts.crossplane.io/stable 2>/dev/null || true
     helm repo update crossplane-stable
     helm upgrade --install crossplane crossplane-stable/crossplane \
+        --version "$CROSSPLANE_CHART_VERSION" \
         --namespace crossplane-system --create-namespace \
         --wait --timeout 300s
-    log "Waiting for Crossplane to be ready..."
-    kubectl wait --for=condition=available deployment/crossplane -n crossplane-system --timeout=120s
+    wait_for_deployment crossplane crossplane-system 120
 
     log "Installing Crossplane providers..."
     kubectl apply -f "$ROOT_DIR/k8s/crossplane/provider.yaml"
     kubectl apply -f "$ROOT_DIR/k8s/crossplane/function.yaml"
-    sleep 30
+
+    log "Waiting for provider CRD..."
+    wait_for_crd "providerconfigs.kubernetes.crossplane.io" 120
     kubectl apply -f "$ROOT_DIR/k8s/crossplane/provider-config.yaml"
 
-    log "Granting provider permissions..."
-    SA=$(kubectl get sa -n crossplane-system -o name | grep provider-kubernetes | head -1 | cut -d/ -f2)
-    if [ -n "$SA" ]; then
-        kubectl create clusterrolebinding provider-kubernetes-admin \
-            --clusterrole=cluster-admin \
-            --serviceaccount="crossplane-system:$SA" \
-            --dry-run=client -o yaml | kubectl apply -f -
-    fi
+    log "Applying scoped RBAC for provider..."
+    kubectl apply -f "$ROOT_DIR/k8s/crossplane/rbac.yaml"
+    SA=""
+    local elapsed=0
+    while [ -z "$SA" ]; do
+        SA=$(kubectl get sa -n crossplane-system -o name 2>/dev/null | grep provider-kubernetes | head -1 | cut -d/ -f2) || true
+        if [ "$elapsed" -ge 60 ]; then
+            err "Timed out waiting for provider service account"
+        fi
+        sleep 5
+        elapsed=$((elapsed + 5))
+    done
+    kubectl create clusterrolebinding infraforge-provider-kubernetes \
+        --clusterrole=crossplane-provider-kubernetes \
+        --serviceaccount="crossplane-system:$SA" \
+        --dry-run=client -o yaml | kubectl apply -f -
 
     log "Applying XRDs and Compositions..."
     kubectl apply -f "$ROOT_DIR/k8s/crossplane/xrd-microservice.yaml"
     kubectl apply -f "$ROOT_DIR/k8s/crossplane/xrd-database.yaml"
-    sleep 10
+    wait_for_crd "microservices.platform.veloxlabs.dev" 60
+    wait_for_crd "databases.platform.veloxlabs.dev" 60
     kubectl apply -f "$ROOT_DIR/k8s/crossplane/composition-microservice.yaml"
     kubectl apply -f "$ROOT_DIR/k8s/crossplane/composition-database.yaml"
     ok "Crossplane installed with Microservice + Database XRDs"
@@ -100,26 +139,28 @@ setup_crossplane() {
 
 # Install OPA Gatekeeper
 setup_gatekeeper() {
-    log "Installing OPA Gatekeeper..."
+    log "Installing OPA Gatekeeper (chart ${GATEKEEPER_CHART_VERSION})..."
     helm repo add gatekeeper https://open-policy-agent.github.io/gatekeeper/charts 2>/dev/null || true
     helm repo update gatekeeper
     helm upgrade --install gatekeeper gatekeeper/gatekeeper \
+        --version "$GATEKEEPER_CHART_VERSION" \
         --namespace gatekeeper-system --create-namespace \
-        --set replicas=1 --set audit.replicas=1 \
         --wait --timeout 300s
+    wait_for_deployment gatekeeper-controller-manager gatekeeper-system 120
     log "Applying security policies..."
     kubectl apply -f "$ROOT_DIR/k8s/gatekeeper/templates/"
-    sleep 5
+    wait_for_crd "k8snoprivileged.constraints.gatekeeper.sh" 30
     kubectl apply -f "$ROOT_DIR/k8s/gatekeeper/constraints/"
     ok "Gatekeeper installed with security policies"
 }
 
 # Install Trivy Operator
 setup_trivy() {
-    log "Installing Trivy Operator..."
+    log "Installing Trivy Operator (chart ${TRIVY_CHART_VERSION})..."
     helm repo add aquasecurity https://aquasecurity.github.io/helm-charts/ 2>/dev/null || true
     helm repo update aquasecurity
     helm upgrade --install trivy-operator aquasecurity/trivy-operator \
+        --version "$TRIVY_CHART_VERSION" \
         --namespace trivy-system --create-namespace \
         --set trivy.ignoreUnfixed=true \
         --wait --timeout 300s
@@ -141,18 +182,14 @@ print_access() {
     echo "  InfraForge Platform Ready"
     echo "============================================"
     echo ""
-    ARGOCD_PASS=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d)
-    echo "ArgoCD:     kubectl port-forward svc/argocd-server -n argocd 8888:443"
-    echo "            https://localhost:8888  (admin / $ARGOCD_PASS)"
+    echo "Access UIs:  make port-forward"
     echo ""
-    echo "Grafana:    kubectl port-forward svc/monitoring-grafana -n monitoring 3333:80"
-    echo "            http://localhost:3333   (admin / infraforge)"
+    echo "Credentials:"
+    echo "  ArgoCD:   kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
+    echo "  Grafana:  kubectl -n monitoring get secret monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 -d"
     echo ""
-    echo "Deploy a microservice:"
-    echo "  kubectl apply -f k8s/apps/demo-api/claim.yaml"
-    echo ""
-    echo "Deploy a database:"
-    echo "  kubectl apply -f k8s/apps/demo-db/claim.yaml"
+    echo "Deploy a microservice:  kubectl apply -f k8s/apps/demo-api/claim.yaml"
+    echo "Deploy a database:      kubectl apply -f k8s/apps/demo-db/claim.yaml"
     echo ""
 }
 
